@@ -1,21 +1,21 @@
-from rest_framework import status, permissions
+from rest_framework import status, permissions, generics
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser
 from django.contrib.auth import get_user_model
 from django.http import JsonResponse
 
-from .models import FaceEncoding
-from .serializers import FaceEnrollSerializer
-
 import face_recognition
 import numpy as np
 from datetime import datetime
-from .models import FaceEncoding, AttendanceSession, AttendanceRecord
-from .serializers import FaceEnrollSerializer, AttendanceSessionSerializer, MarkAttendanceSerializer
-from rest_framework import generics
-User = get_user_model()
 
+from .models import FaceEncoding, AttendanceSession, AttendanceRecord
+from .serializers import (
+    FaceEnrollSerializer, AttendanceSessionSerializer,
+    MarkAttendanceSerializer, ManualAttendanceSerializer, AttendanceRecordSerializer,
+)
+
+User = get_user_model()
 
 def mark_attendance(request):
     # Old dummy view kept temporarily — will be replaced by the real
@@ -181,3 +181,64 @@ class MarkAttendanceFaceView(APIView):
             "confidence_score": float(distance),
             "marked_at": record.marked_at,
         }, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
+
+class MarkAttendanceManualView(APIView):
+    """
+    POST /api/attendance/mark-manual/ — faculty/admin only.
+    Used for LECTURE sessions where faculty is physically present.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        if not (request.user.is_faculty or request.user.is_admin_role):
+            return Response({"detail": "Only faculty or admin can mark attendance manually."}, status=status.HTTP_403_FORBIDDEN)
+
+        serializer = ManualAttendanceSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        try:
+            session = AttendanceSession.objects.get(id=data['session_id'])
+        except AttendanceSession.DoesNotExist:
+            return Response({"detail": "Session not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        try:
+            student = User.objects.get(id=data['student_id'], role='student')
+        except User.DoesNotExist:
+            return Response({"detail": "Student not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        record, created = AttendanceRecord.objects.update_or_create(
+            session=session,
+            student=student,
+            defaults={
+                'is_present': data['is_present'],
+                'marked_via': AttendanceRecord.MarkedVia.MANUAL,
+            }
+        )
+
+        return Response({
+            "detail": f"{student.username} marked {'present' if data['is_present'] else 'absent'}.",
+            "record_id": record.id,
+        }, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
+
+
+class SessionAttendanceListView(generics.ListAPIView):
+    """
+    GET /api/attendance/sessions/<id>/records/
+    Faculty/admin: see all records for a session they own (or any, if admin).
+    Students: see only their own record for that session.
+    """
+    serializer_class = AttendanceRecordSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        session_id = self.kwargs['session_id']
+        user = self.request.user
+
+        if user.is_student:
+            return AttendanceRecord.objects.filter(session_id=session_id, student=user)
+        elif user.is_faculty:
+            return AttendanceRecord.objects.filter(session_id=session_id, session__faculty=user)
+        elif user.is_admin_role:
+            return AttendanceRecord.objects.filter(session_id=session_id)
+        return AttendanceRecord.objects.none()

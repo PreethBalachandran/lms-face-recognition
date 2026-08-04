@@ -2,7 +2,7 @@ from rest_framework import serializers
 from django.contrib.auth import get_user_model
 import face_recognition
 from .models import AttendanceSession
-from .models import AttendanceSession
+from .models import AttendanceRecord
 
 
 User = get_user_model()
@@ -60,3 +60,21 @@ class MarkAttendanceSerializer(serializers.Serializer):
         encodings = face_recognition.face_encodings(loaded_image, known_face_locations=face_locations)
         self.extracted_encoding = encodings[0]
         return image
+
+class ManualAttendanceSerializer(serializers.Serializer):
+    """Faculty marks a single student present/absent directly — no face involved."""
+    session_id = serializers.IntegerField()
+    student_id = serializers.IntegerField()
+    is_present = serializers.BooleanField(default=True)
+
+
+class AttendanceRecordSerializer(serializers.ModelSerializer):
+    """Used to display attendance records — read-only."""
+    student_username = serializers.CharField(source='student.username', read_only=True)
+
+    class Meta:
+        model = AttendanceRecord
+        fields = [
+            'id', 'student', 'student_username', 'is_present',
+            'marked_via', 'marked_at', 'confidence_score', 'marked_from_ip',
+        ]
