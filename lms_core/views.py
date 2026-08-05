@@ -3,10 +3,10 @@ from django.shortcuts import render
 from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework.parsers import MultiPartParser, FormParser
 
-from .models import Course, Enrollment
-from .serializers import CourseSerializer, EnrollmentSerializer
-
+from .models import Course, Enrollment, CourseMaterial
+from .serializers import CourseSerializer, EnrollmentSerializer, CourseMaterialSerializer
 
 class CourseCreateView(generics.CreateAPIView):
     """POST /api/lms/courses/create/ — faculty/admin only."""
@@ -79,3 +79,60 @@ class MyEnrollmentsView(generics.ListAPIView):
 
     def get_queryset(self):
         return Enrollment.objects.filter(student=self.request.user)# Create your views here.
+class CourseMaterialUploadView(generics.CreateAPIView):
+    """
+    POST /api/lms/materials/upload/ — faculty who owns the course, or admin.
+    """
+    queryset = CourseMaterial.objects.all()
+    serializer_class = CourseMaterialSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]  # needed for file upload
+
+    def create(self, request, *args, **kwargs):
+        course_id = request.data.get('course')
+        try:
+            course = Course.objects.get(id=course_id)
+        except Course.DoesNotExist:
+            return Response({"detail": "Course not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        user = request.user
+        is_owning_faculty = user.is_faculty and course.faculty_id == user.id
+        if not (is_owning_faculty or user.is_admin_role):
+            return Response(
+                {"detail": "Only the faculty who owns this course (or an admin) can upload materials."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        return super().create(request, *args, **kwargs)
+
+    def perform_create(self, serializer):
+        serializer.save(uploaded_by=self.request.user)
+
+
+class CourseMaterialListView(generics.ListAPIView):
+    """
+    GET /api/lms/materials/<course_id>/
+    - Students: only if actively enrolled in that course
+    - Faculty: only if they own that course
+    - Admin: always
+    """
+    serializer_class = CourseMaterialSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        course_id = self.kwargs['course_id']
+        user = self.request.user
+
+        try:
+            course = Course.objects.get(id=course_id)
+        except Course.DoesNotExist:
+            return CourseMaterial.objects.none()
+
+        if user.is_admin_role:
+            return CourseMaterial.objects.filter(course=course)
+        elif user.is_faculty and course.faculty_id == user.id:
+            return CourseMaterial.objects.filter(course=course)
+        elif user.is_student:
+            is_enrolled = Enrollment.objects.filter(student=user, course=course, status='active').exists()
+            if is_enrolled:
+                return CourseMaterial.objects.filter(course=course)
+        return CourseMaterial.objects.none()

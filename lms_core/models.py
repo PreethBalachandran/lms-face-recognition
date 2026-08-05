@@ -50,3 +50,24 @@ class Enrollment(models.Model):
 
     def __str__(self):
         return f"{self.student.username} in {self.course.code} ({self.status})"
+
+
+class CourseMaterial(models.Model):
+    """A file/note attached to a course — notes, slides, readings, etc."""
+    course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name='materials')
+    title = models.CharField(max_length=200)
+    file = models.FileField(upload_to='course_materials/%Y/%m/')
+    description = models.TextField(blank=True)
+    order = models.PositiveIntegerField(default=0, help_text="Controls display order, e.g. Week 1 = 1")
+    uploaded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='uploaded_materials',
+    )
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['order', '-uploaded_at']
+
+    def __str__(self):
+        return f"{self.course.code} — {self.title}"
