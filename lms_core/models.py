@@ -106,9 +106,24 @@ class Submission(models.Model):
     submitted_at = models.DateTimeField(auto_now_add=True)
     is_late = models.BooleanField(default=False)
 
+    # Grading fields — null until faculty actually grades it
+    marks_obtained = models.PositiveIntegerField(null=True, blank=True)
+    feedback = models.TextField(blank=True)
+    graded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='graded_submissions',
+    )
+    graded_at = models.DateTimeField(null=True, blank=True)
+
     class Meta:
-        unique_together = ['assignment', 'student']  # one submission slot per student per assignment
+        unique_together = ['assignment', 'student']
         ordering = ['-submitted_at']
+
+    @property
+    def is_graded(self):
+        return self.marks_obtained is not None
 
     def __str__(self):
         return f"{self.student.username} — {self.assignment.title}"

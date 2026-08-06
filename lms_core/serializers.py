@@ -70,3 +70,20 @@ class SubmissionSerializer(serializers.ModelSerializer):
             'file', 'submitted_at', 'is_late',
         ]
         read_only_fields = ['id', 'student', 'submitted_at', 'is_late']
+
+
+
+class SubmissionSerializer(serializers.ModelSerializer):
+    student_username = serializers.CharField(source='student.username', read_only=True)
+    assignment_title = serializers.CharField(source='assignment.title', read_only=True)
+    graded_by_username = serializers.CharField(source='graded_by.username', read_only=True, default=None)
+    is_graded = serializers.BooleanField(read_only=True)
+
+    class Meta:
+        model = Submission
+        fields = [
+            'id', 'assignment', 'assignment_title', 'student', 'student_username',
+            'file', 'submitted_at', 'is_late', 'marks_obtained', 'feedback',
+            'graded_by', 'graded_by_username', 'graded_at', 'is_graded',
+        ]
+        read_only_fields = ['id', 'student', 'submitted_at', 'is_late', 'graded_by', 'graded_at']

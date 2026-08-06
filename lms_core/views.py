@@ -270,3 +270,57 @@ class AssignmentSubmissionsListView(generics.ListAPIView):
         elif user.is_student:
             return Submission.objects.filter(assignment=assignment, student=user)
         return Submission.objects.none()
+
+
+class GradeSubmissionView(APIView):
+    """
+    POST /api/lms/submissions/grade/
+    Faculty who owns the course (or admin) grades a specific submission.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        submission_id = request.data.get('submission_id')
+        marks_obtained = request.data.get('marks_obtained')
+        feedback = request.data.get('feedback', '')
+
+        if submission_id is None or marks_obtained is None:
+            return Response(
+                {"detail": "submission_id and marks_obtained are required."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            submission = Submission.objects.get(id=submission_id)
+        except Submission.DoesNotExist:
+            return Response({"detail": "Submission not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        course = submission.assignment.course
+        user = request.user
+        is_owning_faculty = user.is_faculty and course.faculty_id == user.id
+        if not (is_owning_faculty or user.is_admin_role):
+            return Response(
+                {"detail": "Only the faculty who owns this course (or an admin) can grade this submission."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        try:
+            marks_obtained = int(marks_obtained)
+        except (TypeError, ValueError):
+            return Response({"detail": "marks_obtained must be a number."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if marks_obtained > submission.assignment.max_marks:
+            return Response(
+                {"detail": f"marks_obtained cannot exceed max_marks ({submission.assignment.max_marks})."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        from django.utils import timezone
+        submission.marks_obtained = marks_obtained
+        submission.feedback = feedback
+        submission.graded_by = user
+        submission.graded_at = timezone.now()
+        submission.save()
+
+        serializer = SubmissionSerializer(submission)
+        return Response(serializer.data, status=status.HTTP_200_OK)
