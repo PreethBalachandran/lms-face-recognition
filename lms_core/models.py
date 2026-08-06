@@ -91,3 +91,24 @@ class Assignment(models.Model):
 
     def __str__(self):
         return f"{self.course.code} — {self.title} (due {self.due_date.date()})"
+
+
+class Submission(models.Model):
+    """A student's submitted work for a specific assignment."""
+    assignment = models.ForeignKey(Assignment, on_delete=models.CASCADE, related_name='submissions')
+    student = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='submissions',
+        limit_choices_to={'role': 'student'},
+    )
+    file = models.FileField(upload_to='submissions/%Y/%m/')
+    submitted_at = models.DateTimeField(auto_now_add=True)
+    is_late = models.BooleanField(default=False)
+
+    class Meta:
+        unique_together = ['assignment', 'student']  # one submission slot per student per assignment
+        ordering = ['-submitted_at']
+
+    def __str__(self):
+        return f"{self.student.username} — {self.assignment.title}"

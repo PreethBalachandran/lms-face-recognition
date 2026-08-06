@@ -5,9 +5,10 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.parsers import MultiPartParser, FormParser
 
-from .models import Course, Enrollment, CourseMaterial, Assignment
+from .models import Course, Enrollment, CourseMaterial, Assignment, Submission
 from .serializers import (
-    CourseSerializer, EnrollmentSerializer, CourseMaterialSerializer, AssignmentSerializer,
+    CourseSerializer, EnrollmentSerializer, CourseMaterialSerializer,
+    AssignmentSerializer, SubmissionSerializer,
 )
 class CourseCreateView(generics.CreateAPIView):
     """POST /api/lms/courses/create/ — faculty/admin only."""
@@ -190,3 +191,82 @@ class AssignmentListView(generics.ListAPIView):
                 return Assignment.objects.filter(course=course)
         return Assignment.objects.none()
 
+
+
+
+
+class SubmitAssignmentView(APIView):
+    """
+    POST /api/lms/submissions/submit/
+    Student submits work for an assignment. Must be enrolled in the
+    assignment's course. Resubmission overwrites the previous file.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request):
+        if not request.user.is_student:
+            return Response({"detail": "Only students can submit assignments."}, status=status.HTTP_403_FORBIDDEN)
+
+        assignment_id = request.data.get('assignment')
+        file = request.data.get('file')
+
+        if not assignment_id or not file:
+            return Response({"detail": "assignment and file are required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            assignment = Assignment.objects.get(id=assignment_id)
+        except Assignment.DoesNotExist:
+            return Response({"detail": "Assignment not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        is_enrolled = Enrollment.objects.filter(
+            student=request.user, course=assignment.course, status='active'
+        ).exists()
+        if not is_enrolled:
+            return Response(
+                {"detail": "You must be enrolled in this course to submit."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        from django.utils import timezone
+        is_late = timezone.now() > assignment.due_date
+
+        submission, created = Submission.objects.update_or_create(
+            assignment=assignment,
+            student=request.user,
+            defaults={'file': file, 'is_late': is_late}
+        )
+
+        serializer = SubmissionSerializer(submission)
+        return Response({
+            **serializer.data,
+            "detail": "Submitted successfully." if created else "Resubmitted successfully (previous file replaced).",
+        }, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
+
+
+class AssignmentSubmissionsListView(generics.ListAPIView):
+    """
+    GET /api/lms/submissions/<assignment_id>/
+    - Faculty who owns the course: see ALL submissions for that assignment
+    - Student: see only their own submission
+    - Admin: see all
+    """
+    serializer_class = SubmissionSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        assignment_id = self.kwargs['assignment_id']
+        user = self.request.user
+
+        try:
+            assignment = Assignment.objects.get(id=assignment_id)
+        except Assignment.DoesNotExist:
+            return Submission.objects.none()
+
+        if user.is_admin_role:
+            return Submission.objects.filter(assignment=assignment)
+        elif user.is_faculty and assignment.course.faculty_id == user.id:
+            return Submission.objects.filter(assignment=assignment)
+        elif user.is_student:
+            return Submission.objects.filter(assignment=assignment, student=user)
+        return Submission.objects.none()
