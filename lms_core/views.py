@@ -5,9 +5,10 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.parsers import MultiPartParser, FormParser
 
-from .models import Course, Enrollment, CourseMaterial
-from .serializers import CourseSerializer, EnrollmentSerializer, CourseMaterialSerializer
-
+from .models import Course, Enrollment, CourseMaterial, Assignment
+from .serializers import (
+    CourseSerializer, EnrollmentSerializer, CourseMaterialSerializer, AssignmentSerializer,
+)
 class CourseCreateView(generics.CreateAPIView):
     """POST /api/lms/courses/create/ — faculty/admin only."""
     queryset = Course.objects.all()
@@ -136,3 +137,56 @@ class CourseMaterialListView(generics.ListAPIView):
             if is_enrolled:
                 return CourseMaterial.objects.filter(course=course)
         return CourseMaterial.objects.none()
+class AssignmentCreateView(generics.CreateAPIView):
+    """POST /api/lms/assignments/create/ — faculty who owns the course, or admin."""
+    queryset = Assignment.objects.all()
+    serializer_class = AssignmentSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def create(self, request, *args, **kwargs):
+        course_id = request.data.get('course')
+        try:
+            course = Course.objects.get(id=course_id)
+        except Course.DoesNotExist:
+            return Response({"detail": "Course not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        user = request.user
+        is_owning_faculty = user.is_faculty and course.faculty_id == user.id
+        if not (is_owning_faculty or user.is_admin_role):
+            return Response(
+                {"detail": "Only the faculty who owns this course (or an admin) can create assignments."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        return super().create(request, *args, **kwargs)
+
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user)
+
+
+class AssignmentListView(generics.ListAPIView):
+    """
+    GET /api/lms/assignments/<course_id>/
+    Same visibility rule as materials: enrolled students, owning faculty, or admin.
+    """
+    serializer_class = AssignmentSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        course_id = self.kwargs['course_id']
+        user = self.request.user
+
+        try:
+            course = Course.objects.get(id=course_id)
+        except Course.DoesNotExist:
+            return Assignment.objects.none()
+
+        if user.is_admin_role:
+            return Assignment.objects.filter(course=course)
+        elif user.is_faculty and course.faculty_id == user.id:
+            return Assignment.objects.filter(course=course)
+        elif user.is_student:
+            is_enrolled = Enrollment.objects.filter(student=user, course=course, status='active').exists()
+            if is_enrolled:
+                return Assignment.objects.filter(course=course)
+        return Assignment.objects.none()
+

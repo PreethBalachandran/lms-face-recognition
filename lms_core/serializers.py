@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Course, Enrollment, CourseMaterial
+from .models import Course, Enrollment, CourseMaterial, Assignment
 
 
 class CourseSerializer(serializers.ModelSerializer):
@@ -41,3 +41,20 @@ class CourseMaterialSerializer(serializers.ModelSerializer):
             'uploaded_by', 'uploaded_by_username', 'uploaded_at',
         ]
         read_only_fields = ['id', 'uploaded_by', 'uploaded_at']
+
+class AssignmentSerializer(serializers.ModelSerializer):
+    course_code = serializers.CharField(source='course.code', read_only=True)
+    created_by_username = serializers.CharField(source='created_by.username', read_only=True)
+    is_overdue = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Assignment
+        fields = [
+            'id', 'course', 'course_code', 'title', 'description', 'max_marks',
+            'due_date', 'created_by', 'created_by_username', 'created_at', 'is_overdue',
+        ]
+        read_only_fields = ['id', 'created_by', 'created_at']
+
+    def get_is_overdue(self, obj):
+        from django.utils import timezone
+        return timezone.now() > obj.due_date

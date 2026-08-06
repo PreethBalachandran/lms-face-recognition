@@ -71,3 +71,23 @@ class CourseMaterial(models.Model):
 
     def __str__(self):
         return f"{self.course.code} — {self.title}"
+
+class Assignment(models.Model):
+    """An assignment posted for a course, with a due date."""
+    course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name='assignments')
+    title = models.CharField(max_length=200)
+    description = models.TextField(blank=True)
+    max_marks = models.PositiveIntegerField(default=100)
+    due_date = models.DateTimeField()
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='created_assignments',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['due_date']
+
+    def __str__(self):
+        return f"{self.course.code} — {self.title} (due {self.due_date.date()})"
