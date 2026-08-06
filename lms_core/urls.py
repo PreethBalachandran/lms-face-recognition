@@ -15,4 +15,7 @@ urlpatterns = [
     path('submissions/submit/', views.SubmitAssignmentView.as_view(), name='submission-submit'),
     path('submissions/<int:assignment_id>/', views.AssignmentSubmissionsListView.as_view(), name='submission-list'),
     path('submissions/grade/', views.GradeSubmissionView.as_view(), name='submission-grade'),
+    path('dashboard/student/', views.StudentDashboardView.as_view(), name='dashboard-student'),
+    path('dashboard/faculty/', views.FacultyDashboardView.as_view(), name='dashboard-faculty'),
+    path('dashboard/admin/', views.AdminDashboardView.as_view(), name='dashboard-admin'),
 ]

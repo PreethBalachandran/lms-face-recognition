@@ -4,12 +4,18 @@ from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.parsers import MultiPartParser, FormParser
-
+from attendance.models import AttendanceRecord, AttendanceSession
+from attendance.serializers import AttendanceSessionSerializer
 from .models import Course, Enrollment, CourseMaterial, Assignment, Submission
 from .serializers import (
     CourseSerializer, EnrollmentSerializer, CourseMaterialSerializer,
     AssignmentSerializer, SubmissionSerializer,
 )
+
+from django.contrib.auth import get_user_model
+User = get_user_model()
+
+
 class CourseCreateView(generics.CreateAPIView):
     """POST /api/lms/courses/create/ — faculty/admin only."""
     queryset = Course.objects.all()
@@ -80,7 +86,8 @@ class MyEnrollmentsView(generics.ListAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        return Enrollment.objects.filter(student=self.request.user)# Create your views here.
+        return Enrollment.objects.filter(student=self.request.user)
+    # Create your views here.
 class CourseMaterialUploadView(generics.CreateAPIView):
     """
     POST /api/lms/materials/upload/ — faculty who owns the course, or admin.
@@ -324,3 +331,92 @@ class GradeSubmissionView(APIView):
 
         serializer = SubmissionSerializer(submission)
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+
+
+class StudentDashboardView(APIView):
+    """GET /api/lms/dashboard/student/ — student's own summary."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        if not request.user.is_student:
+            return Response({"detail": "Student access only."}, status=status.HTTP_403_FORBIDDEN)
+
+        user = request.user
+        from django.utils import timezone
+
+        enrollments = Enrollment.objects.filter(student=user, status='active')
+        course_ids = enrollments.values_list('course_id', flat=True)
+
+        upcoming_assignments = Assignment.objects.filter(
+            course_id__in=course_ids, due_date__gte=timezone.now()
+        ).order_by('due_date')[:5]
+
+        recent_grades = Submission.objects.filter(
+            student=user, marks_obtained__isnull=False
+        ).order_by('-graded_at')[:5]
+
+        total_sessions = AttendanceRecord.objects.filter(student=user).count()
+        present_sessions = AttendanceRecord.objects.filter(student=user, is_present=True).count()
+        attendance_percentage = round((present_sessions / total_sessions * 100), 1) if total_sessions > 0 else None
+
+        return Response({
+            "enrolled_courses_count": enrollments.count(),
+            "courses": CourseSerializer(
+                Course.objects.filter(id__in=course_ids), many=True
+            ).data,
+            "upcoming_assignments": AssignmentSerializer(upcoming_assignments, many=True).data,
+            "recent_grades": SubmissionSerializer(recent_grades, many=True).data,
+            "attendance_percentage": attendance_percentage,
+            "attendance_summary": f"{present_sessions}/{total_sessions} sessions attended" if total_sessions > 0 else "No attendance records yet",
+        })
+
+
+class FacultyDashboardView(APIView):
+    """GET /api/lms/dashboard/faculty/ — faculty's own summary."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        if not request.user.is_faculty:
+            return Response({"detail": "Faculty access only."}, status=status.HTTP_403_FORBIDDEN)
+
+        user = request.user
+        courses = Course.objects.filter(faculty=user)
+        course_ids = courses.values_list('id', flat=True)
+
+        total_students = Enrollment.objects.filter(course_id__in=course_ids, status='active').values('student').distinct().count()
+
+        pending_grading = Submission.objects.filter(
+            assignment__course_id__in=course_ids, marks_obtained__isnull=True
+        ).count()
+
+        recent_sessions = AttendanceSession.objects.filter(faculty=user).order_by('-started_at')[:5]
+
+        return Response({
+            "courses_count": courses.count(),
+            "courses": CourseSerializer(courses, many=True).data,
+            "total_students_across_courses": total_students,
+            "submissions_pending_grading": pending_grading,
+            "recent_attendance_sessions": AttendanceSessionSerializer(recent_sessions, many=True).data,
+        })
+
+
+class AdminDashboardView(APIView):
+    """GET /api/lms/dashboard/admin/ — system-wide summary."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        if not request.user.is_admin_role:
+            return Response({"detail": "Admin access only."}, status=status.HTTP_403_FORBIDDEN)
+
+        return Response({
+            "total_students": User.objects.filter(role='student').count(),
+            "total_faculty": User.objects.filter(role='faculty').count(),
+            "total_courses": Course.objects.count(),
+            "total_active_enrollments": Enrollment.objects.filter(status='active').count(),
+            "total_assignments": Assignment.objects.count(),
+            "total_submissions": Submission.objects.count(),
+            "ungraded_submissions": Submission.objects.filter(marks_obtained__isnull=True).count(),
+            "total_attendance_sessions": AttendanceSession.objects.count(),
+        })
