@@ -420,3 +420,18 @@ class AdminDashboardView(APIView):
             "ungraded_submissions": Submission.objects.filter(marks_obtained__isnull=True).count(),
             "total_attendance_sessions": AttendanceSession.objects.count(),
         })
+
+class AttendanceSessionListView(generics.ListAPIView):
+    """GET /api/attendance/sessions/ — faculty sees their own sessions,
+    students see open lab sessions they can mark attendance for."""
+    serializer_class = AttendanceSessionSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        if self.request.user.is_faculty:
+            return AttendanceSession.objects.filter(faculty=self.request.user)
+        elif self.request.user.is_admin_role:
+            return AttendanceSession.objects.all()
+        elif self.request.user.is_student:
+            return AttendanceSession.objects.filter(is_open=True)
+        return AttendanceSession.objects.none()

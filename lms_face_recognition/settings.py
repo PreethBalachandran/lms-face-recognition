@@ -13,7 +13,7 @@ env = environ.Env(
 )
 environ.Env.read_env(BASE_DIR / ".env")
 
-SECRET_KEY = SECRET_KEY = env("SECRET_KEY", default="django-insecure-CHANGE-ME-IN-PRODUCTION")
+SECRET_KEY =  env("SECRET_KEY", default="django-insecure-CHANGE-ME-IN-PRODUCTION")
 DEBUG = env("DEBUG")
 ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=["localhost", "127.0.0.1"])
 
@@ -28,6 +28,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'rest_framework_simplejwt',
     'drf_spectacular',
+    'corsheaders',
 
     'users',
     'attendance',
@@ -36,6 +37,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -127,3 +129,6 @@ SPECTACULAR_SETTINGS = {
     'DESCRIPTION': 'API for LMS core features and face-recognition-based lab attendance with IP and time-window verification.',
     'VERSION': '1.0.0',
 }
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:5173",
+]

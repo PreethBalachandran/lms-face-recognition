@@ -96,6 +96,8 @@ class AttendanceSessionListView(generics.ListAPIView):
             return AttendanceSession.objects.filter(faculty=self.request.user)
         elif self.request.user.is_admin_role:
             return AttendanceSession.objects.all()
+        elif self.request.user.is_student:
+            return AttendanceSession.objects.filter(is_open=True)
         return AttendanceSession.objects.none()
 
 class MarkAttendanceFaceView(APIView):
@@ -242,3 +244,5 @@ class SessionAttendanceListView(generics.ListAPIView):
         elif user.is_admin_role:
             return AttendanceRecord.objects.filter(session_id=session_id)
         return AttendanceRecord.objects.none()
+
+
