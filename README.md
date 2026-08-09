@@ -4,6 +4,13 @@ A Django REST API for a Learning Management System with a face-recognition-based
 attendance system designed around a real problem: unsupervised lab hours where
 students could leave early and still get marked present.
 
+## Live repos
+
+- **Backend (this repo)**: Django REST API
+- **Frontend**: https://github.com/PreethBalachandran/lms-frontend — React UI covering
+  auth, role dashboards, course management, face-lock lab attendance with live
+  webcam capture, and assignment submission/grading
+
 ## The core idea
 
 Most face-recognition attendance projects apply biometric verification everywhere,
